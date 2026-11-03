@@ -207,6 +207,24 @@ class VentesViewModel(
         }
     }
 
+    fun supprimerVente(venteId: Long) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    expandedVenteIds = it.expandedVenteIds - venteId,
+                    detailsParVente = it.detailsParVente - venteId
+                )
+            }
+            repository.supprimerVente(venteId)
+        }
+    }
+
+    fun supprimerReglement(reglementId: Long) {
+        viewModelScope.launch {
+            repository.supprimerReglement(reglementId)
+        }
+    }
+
     fun creerNouvelleVente(
         clientId: Long,
         panier: List<PanierItemDraft>,

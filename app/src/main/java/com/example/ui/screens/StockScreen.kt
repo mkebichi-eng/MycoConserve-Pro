@@ -22,8 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Factory
 import androidx.compose.material.icons.filled.History
@@ -34,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,8 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,15 +54,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.AppDatabase
 import com.example.data.local.FormatProduitEntity
 import com.example.data.local.MouvementStockWithFormatRow
 import com.example.data.local.StockValorisationSummary
+import com.example.ui.components.CompactScreenHeader
+import com.example.ui.components.ConfirmDeleteDialog
+import com.example.ui.components.PurgeAllDataDialog
 import com.example.ui.theme.ChanterelleGoldSecondary
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.StatusPaidGreen
@@ -85,15 +89,67 @@ fun StockScreen(
         stockInitial: Int,
         seuilAlerte: Int
     ) -> Unit,
+    onDeleteFormat: (Long) -> Unit,
     onAddProductionBatch: (formatId: Long, quantite: Int, motif: String) -> Unit,
     onRecordAdjustmentOrLoss: (formatId: Long, quantiteDelta: Int, estCasseOuPerte: Boolean, motif: String) -> Unit,
+    onDeleteMouvementStock: (Long) -> Unit,
+    onPurgeAllData: (conserverFormats: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedSubTab by remember { mutableIntStateOf(0) }
     var showFormatDialog by remember { mutableStateOf(false) }
     var formatToEdit by remember { mutableStateOf<FormatProduitEntity?>(null) }
     var formatForProduction by remember { mutableStateOf<FormatProduitEntity?>(null) }
     var formatForAdjustment by remember { mutableStateOf<FormatProduitEntity?>(null) }
+    var formatToDelete by remember { mutableStateOf<FormatProduitEntity?>(null) }
+    var mouvementToDelete by remember { mutableStateOf<MouvementStockWithFormatRow?>(null) }
+    var showPurgeDialog by remember { mutableStateOf(false) }
+
+    if (showPurgeDialog) {
+        PurgeAllDataDialog(
+            onDismiss = { showPurgeDialog = false },
+            onPurgeEverything = {
+                AppDatabase.markSeedDismissed(context)
+                onPurgeAllData(false)
+                showPurgeDialog = false
+            },
+            onPurgeHistoryKeepFormats = {
+                AppDatabase.markSeedDismissed(context)
+                onPurgeAllData(true)
+                showPurgeDialog = false
+            }
+        )
+    }
+
+    formatToDelete?.let { fmt ->
+        ConfirmDeleteDialog(
+            titre = "Supprimer le format ?",
+            message = "Voulez-vous supprimer le format « ${fmt.nomFormat} (${fmt.contenance}) » du catalogue ?",
+            onDismiss = { formatToDelete = null },
+            onConfirm = {
+                onDeleteFormat(fmt.id)
+                formatToDelete = null
+            }
+        )
+    }
+
+    mouvementToDelete?.let { mv ->
+        val actionStockInfo = if (mv.quantiteDelta >= 0) {
+            "Le stock de « ${mv.nomFormat} » sera réduit de ${mv.quantiteDelta} u."
+        } else {
+            "Le stock de « ${mv.nomFormat} » sera augmenté de ${-mv.quantiteDelta} u."
+        }
+        ConfirmDeleteDialog(
+            titre = "Supprimer ce lot / mouvement ?",
+            message = "Motif : ${mv.motif}\n$actionStockInfo",
+            onDismiss = { mouvementToDelete = null },
+            onConfirm = {
+                onDeleteMouvementStock(mv.id)
+                mouvementToDelete = null
+            }
+        )
+    }
 
     if (showFormatDialog) {
         FormatProduitDialog(
@@ -135,144 +191,144 @@ fun StockScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 14.dp)
     ) {
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Top Header + Create Format CTA
+        // 1. En-tête ultra-compact sur 1 seule ligne
+        CompactScreenHeader(
+            title = "Stock",
+            subtitleBadge = "${Formatters.formatDzd(valorisation.valeurStockTotal)} • ${valorisation.totalUnitesStock} u.",
+            subtitleColor = MaterialTheme.colorScheme.primary,
+            addButtonLabel = "Format",
+            addButtonTestTag = "btn_nouveau_format",
+            onAddClick = {
+                formatToEdit = null
+                showFormatDialog = true
+            },
+            onPurgeAllClick = { showPurgeDialog = true }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 2. Sélecteur d'onglets compact sur 1 ligne (Formats vs Lots/Mouvements) + indicateur d'alerte
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "Formats & Stock Conserves",
-                    style = MaterialTheme.typography.headlineSmall
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = selectedSubTab == 0,
+                    onClick = { selectedSubTab = 0 },
+                    label = {
+                        Text(
+                            text = "Formats (${formats.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selectedSubTab == 0) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
-                Text(
-                    text = "Catalogue libre, lots de production & suivi de casse",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                FilterChip(
+                    selected = selectedSubTab == 1,
+                    onClick = { selectedSubTab = 1 },
+                    label = {
+                        Text(
+                            text = "Lots & Mouvements (${mouvementsRecents.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selectedSubTab == 1) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
             }
-            Button(
-                onClick = {
-                    formatToEdit = null
-                    showFormatDialog = true
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.testTag("btn_nouveau_format")
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Nouveau Format")
+
+            if (valorisation.nbFormatsAlerte > 0) {
+                Surface(
+                    color = StatusUnpaidRed.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = "${valorisation.nbFormatsAlerte} alerte(s)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StatusUnpaidRed,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Stock Valuation Banner Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
+        // 3. Liste occupant plus de 80% de l'écran
+        if (selectedSubTab == 0) {
+            if (formats.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "Valeur Marchande Totale du Stock",
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Aucun format en stock. Touchez « + Format » en haut à droite.",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(
-                        text = Formatters.formatDzd(valorisation.valeurStockTotal),
-                        fontFamily = JetBrainsMonoFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "${valorisation.totalUnitesStock} unités en stock",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    if (valorisation.nbFormatsAlerte > 0) {
-                        Text(
-                            text = "${valorisation.nbFormatsAlerte} format(s) sous le seuil",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StatusUnpaidRed,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else {
-                        Text(
-                            text = "Tous les stocks sont optimaux",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StatusPaidGreen
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("formats_stock_list"),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(formats, key = { it.id }) { format ->
+                        FormatStockCard(
+                            format = format,
+                            onEdit = {
+                                formatToEdit = format
+                                showFormatDialog = true
+                            },
+                            onDelete = { formatToDelete = format },
+                            onAddProduction = { formatForProduction = format },
+                            onAdjustOrLoss = { formatForAdjustment = format }
                         )
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        TabRow(selectedTabIndex = selectedSubTab) {
-            Tab(
-                selected = selectedSubTab == 0,
-                onClick = { selectedSubTab = 0 },
-                text = { Text("Formats (${formats.size})") }
-            )
-            Tab(
-                selected = selectedSubTab == 1,
-                onClick = { selectedSubTab = 1 },
-                text = { Text("Journal des Mouvements") }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (selectedSubTab == 0) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("formats_stock_list"),
-                contentPadding = PaddingValues(bottom = 84.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(formats, key = { it.id }) { format ->
-                    FormatStockCard(
-                        format = format,
-                        onEdit = {
-                            formatToEdit = format
-                            showFormatDialog = true
-                        },
-                        onAddProduction = { formatForProduction = format },
-                        onAdjustOrLoss = { formatForAdjustment = format }
+        } else {
+            if (mouvementsRecents.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Aucun lot ou mouvement de stock enregistré.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("mouvements_stock_list"),
-                contentPadding = PaddingValues(bottom = 84.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(mouvementsRecents, key = { it.id }) { mv ->
-                    MouvementStockRowCard(mv = mv)
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("mouvements_stock_list"),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(mouvementsRecents, key = { it.id }) { mv ->
+                        MouvementStockRowCard(
+                            mv = mv,
+                            onDelete = { mouvementToDelete = mv }
+                        )
+                    }
                 }
             }
         }
@@ -283,6 +339,7 @@ fun StockScreen(
 private fun FormatStockCard(
     format: FormatProduitEntity,
     onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onAddProduction: () -> Unit,
     onAdjustOrLoss: () -> Unit
 ) {
@@ -295,146 +352,156 @@ private fun FormatStockCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("format_card_${format.id}"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(
-            width = if (isLowStock) 1.5.dp else 1.dp,
-            color = if (isLowStock) StatusUnpaidRed.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+            width = if (isLowStock) 1.2.dp else 1.dp,
+            color = if (isLowStock) StatusUnpaidRed.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = format.nomFormat,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = format.contenance,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "Prix forfaitaire : ${Formatters.formatDzd(format.prixUnitaire)} • Valeur : ${Formatters.formatDzd(valeurLigne)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Modifier ce format",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            // Stock Level & Alert Threshold Bar
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Text(
+                        text = format.nomFormat,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(6.dp)
                     ) {
-                        if (isLowStock) {
-                            Icon(
-                                imageVector = Icons.Default.WarningAmber,
-                                contentDescription = "Alerte stock bas",
-                                tint = StatusUnpaidRed,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
                         Text(
-                            text = "En stock : ${format.stockActuel} unités",
-                            fontFamily = JetBrainsMonoFontFamily,
+                            text = format.contenance,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = if (isLowStock) StatusUnpaidRed else StatusPaidGreen
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Modifier ce format",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_delete_format_${format.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Supprimer ce format",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PU: ${Formatters.formatDzd(format.prixUnitaire)} • Val: ${Formatters.formatDzd(valeurLigne)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isLowStock) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = "Alerte stock bas",
+                            tint = StatusUnpaidRed,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                     Text(
-                        text = "Seuil d'alerte : ${format.seuilAlerte} u.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "${format.stockActuel} u. (seuil ${format.seuilAlerte})",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isLowStock) StatusUnpaidRed else StatusPaidGreen
                     )
                 }
-
-                LinearProgressIndicator(
-                    progress = { gaugeRatio },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(50)),
-                    color = if (isLowStock) StatusUnpaidRed else StatusPaidGreen,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
             }
 
-            // Quick Stock Movement Actions: Production Batch + Adjustment/Loss
+            LinearProgressIndicator(
+                progress = { gaugeRatio },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(50)),
+                color = if (isLowStock) StatusUnpaidRed else StatusPaidGreen,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+
+            // Compact Action Buttons Row (32.dp height)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilledTonalButton(
                     onClick = onAddProduction,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     modifier = Modifier
-                        .weight(1.3f)
+                        .weight(1.2f)
+                        .height(32.dp)
                         .testTag("btn_lot_production_${format.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Factory,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("+ Lot Production", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("+ Lot Production", style = MaterialTheme.typography.labelSmall)
                 }
 
                 OutlinedButton(
                     onClick = onAdjustOrLoss,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     modifier = Modifier
                         .weight(1f)
+                        .height(32.dp)
                         .testTag("btn_ajustement_casse_${format.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Build,
                         contentDescription = null,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Casse / Ajust.", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Casse / Ajust.", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -442,7 +509,10 @@ private fun FormatStockCard(
 }
 
 @Composable
-private fun MouvementStockRowCard(mv: MouvementStockWithFormatRow) {
+private fun MouvementStockRowCard(
+    mv: MouvementStockWithFormatRow,
+    onDelete: () -> Unit
+) {
     val isPositive = mv.quantiteDelta >= 0
     val badgeColor = when (mv.typeMouvement) {
         "PRODUCTION" -> StatusPaidGreen
@@ -455,23 +525,23 @@ private fun MouvementStockRowCard(mv: MouvementStockWithFormatRow) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
                         .background(badgeColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
@@ -480,7 +550,7 @@ private fun MouvementStockRowCard(mv: MouvementStockWithFormatRow) {
                         imageVector = if (mv.typeMouvement == "PRODUCTION") Icons.Default.Inventory2 else Icons.Default.History,
                         contentDescription = null,
                         tint = badgeColor,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
                 Column {
@@ -489,26 +559,47 @@ private fun MouvementStockRowCard(mv: MouvementStockWithFormatRow) {
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
-                        text = "${Formatters.formatDateTime(mv.dateMouvement)} • ${mv.motif}",
+                        text = "${Formatters.formatDateShort(mv.dateMouvement)} • ${mv.motif}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = if (isPositive) "+${mv.quantiteDelta} u." else "${mv.quantiteDelta} u.",
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = if (isPositive) StatusPaidGreen else StatusUnpaidRed
-                )
-                Text(
-                    text = "Stock: ${mv.stockApres}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = if (isPositive) "+${mv.quantiteDelta} u." else "${mv.quantiteDelta} u.",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = if (isPositive) StatusPaidGreen else StatusUnpaidRed
+                    )
+                    Text(
+                        text = "Stock: ${mv.stockApres}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_delete_mouvement_${mv.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Supprimer ce lot ou mouvement",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
@@ -569,13 +660,13 @@ private fun FormatProduitDialog(
                 )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     contenancesSuggestions.forEach { preset ->
                         FilterChip(
                             selected = contenance.equals(preset, ignoreCase = true),
                             onClick = { contenance = preset },
-                            label = { Text(preset) }
+                            label = { Text(preset, style = MaterialTheme.typography.labelSmall) }
                         )
                     }
                 }

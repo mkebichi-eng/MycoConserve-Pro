@@ -40,7 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.local.AppDatabase
+import com.example.data.AppDatabase
 import com.example.data.repository.ConserverieRepository
 import com.example.ui.screens.ClientsScreen
 import com.example.ui.screens.DashboardScreen
@@ -113,7 +113,6 @@ fun MycoConserveApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Handle system Back button when on secondary tabs
     BackHandler(enabled = currentTab != AppTab.DASHBOARD && !showNouvelleVenteSheet) {
         currentTab = AppTab.DASHBOARD
     }
@@ -205,6 +204,17 @@ fun MycoConserveApp(
                     clientsViewModel.selectClient(clientId)
                     currentTab = AppTab.CLIENTS
                 },
+                onPurgeAllData = { conserverFormats ->
+                    dashboardViewModel.viderToutesLesDonnees(conserverFormats)
+                    scope.launch {
+                        val msg = if (conserverFormats) {
+                            "Ventes, clients et lots supprimés (Formats conservés)"
+                        } else {
+                            "Toutes les données de test ont été supprimées"
+                        }
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                },
                 modifier = Modifier.padding(innerPadding)
             )
 
@@ -218,6 +228,18 @@ fun MycoConserveApp(
                     ventesViewModel.enregistrerAcompte(venteId, montant, mode, obs)
                     scope.launch {
                         snackbarHostState.showSnackbar("Nouvel acompte enregistré sur la vente #$venteId")
+                    }
+                },
+                onDeleteVente = { venteId ->
+                    ventesViewModel.supprimerVente(venteId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Vente #$venteId supprimée • Stock restitué")
+                    }
+                },
+                onDeleteReglement = { reglementId ->
+                    ventesViewModel.supprimerReglement(reglementId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Acompte supprimé • Solde recalculé")
                     }
                 },
                 onOpenNewSaleSheet = { showNouvelleVenteSheet = true },
@@ -236,6 +258,24 @@ fun MycoConserveApp(
                     clientsViewModel.sauvegarderClient(id, nom, tel, adr, notes)
                     scope.launch {
                         snackbarHostState.showSnackbar("Fiche client enregistrée")
+                    }
+                },
+                onDeleteClient = { clientId ->
+                    clientsViewModel.supprimerClient(clientId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Client et commandes associés supprimés")
+                    }
+                },
+                onDeleteClientSale = { venteId ->
+                    clientsViewModel.supprimerFactureClient(venteId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Facture #$venteId supprimée • Stock restitué")
+                    }
+                },
+                onDeleteClientReglement = { reglementId ->
+                    clientsViewModel.supprimerReglementClient(reglementId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Règlement supprimé • Solde recalculé")
                     }
                 },
                 onRecordPaymentOnSale = { venteId, montant, mode, obs ->
@@ -263,6 +303,12 @@ fun MycoConserveApp(
                         snackbarHostState.showSnackbar("Format de conserve enregistré")
                     }
                 },
+                onDeleteFormat = { formatId ->
+                    stockViewModel.supprimerFormat(formatId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Format supprimé du catalogue")
+                    }
+                },
                 onAddProductionBatch = { formatId, qty, motif ->
                     stockViewModel.enregistrerLotProduction(formatId, qty, motif)
                     scope.launch {
@@ -273,6 +319,23 @@ fun MycoConserveApp(
                     stockViewModel.enregistrerAjustementOuCasse(formatId, delta, estCasse, motif)
                     scope.launch {
                         snackbarHostState.showSnackbar("Mouvement de stock enregistré")
+                    }
+                },
+                onDeleteMouvementStock = { mouvementId ->
+                    stockViewModel.supprimerMouvementStock(mouvementId)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Mouvement supprimé • Stock recalculé")
+                    }
+                },
+                onPurgeAllData = { conserverFormats ->
+                    stockViewModel.viderToutesLesDonnees(conserverFormats)
+                    scope.launch {
+                        val msg = if (conserverFormats) {
+                            "Historique vidé (Formats conservés à stock 0)"
+                        } else {
+                            "Base de données entièrement vidée"
+                        }
+                        snackbarHostState.showSnackbar(msg)
                     }
                 },
                 modifier = Modifier.padding(innerPadding)

@@ -81,4 +81,22 @@ class StockViewModel(
             )
         }
     }
+
+    fun supprimerFormat(formatId: Long) {
+        viewModelScope.launch {
+            repository.supprimerFormat(formatId)
+        }
+    }
+
+    fun supprimerMouvementStock(mouvementId: Long) {
+        viewModelScope.launch {
+            repository.supprimerMouvementStock(mouvementId)
+        }
+    }
+
+    fun viderToutesLesDonnees(conserverFormats: Boolean) {
+        viewModelScope.launch {
+            repository.viderToutesLesDonnees(conserverFormats)
+        }
+    }
 }

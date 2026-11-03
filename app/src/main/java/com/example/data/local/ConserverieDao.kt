@@ -38,8 +38,36 @@ interface ConserverieDao {
     @Query("UPDATE formats_produits SET stock_actuel = :nouveauStock WHERE id = :formatId")
     suspend fun updateStockFormat(formatId: Long, nouveauStock: Int)
 
+    @Query("SELECT COUNT(*) FROM lignes_vente WHERE format_id = :formatId")
+    suspend fun countLignesVenteParFormat(formatId: Long): Int
+
+    @Query("DELETE FROM formats_produits WHERE id = :formatId")
+    suspend fun deleteFormatById(formatId: Long)
+
+    @Query("UPDATE formats_produits SET actif = 0, stock_actuel = 0 WHERE id = :formatId")
+    suspend fun desactiverFormatById(formatId: Long)
+
+    @Transaction
+    suspend fun supprimerFormatTransaction(formatId: Long) {
+        val nbUsages = countLignesVenteParFormat(formatId)
+        if (nbUsages == 0) {
+            deleteFormatById(formatId)
+        } else {
+            desactiverFormatById(formatId)
+        }
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMouvementStock(mouvement: MouvementStockEntity): Long
+
+    @Query("SELECT * FROM mouvements_stock WHERE id = :mouvementId LIMIT 1")
+    suspend fun getMouvementStockById(mouvementId: Long): MouvementStockEntity?
+
+    @Query("DELETE FROM mouvements_stock WHERE id = :mouvementId")
+    suspend fun deleteMouvementStockById(mouvementId: Long)
+
+    @Query("DELETE FROM mouvements_stock WHERE vente_id = :venteId")
+    suspend fun deleteMouvementsStockParVenteId(venteId: Long)
 
     @Query(
         """
@@ -58,7 +86,7 @@ interface ConserverieDao {
         LIMIT :limit
         """
     )
-    fun observeRecentMouvementsStock(limit: Int = 60): Flow<List<MouvementStockWithFormatRow>>
+    fun observeRecentMouvementsStock(limit: Int = 80): Flow<List<MouvementStockWithFormatRow>>
 
     @Transaction
     suspend fun enregistrerMouvementStockTransaction(
@@ -83,6 +111,21 @@ interface ConserverieDao {
         )
     }
 
+    /**
+     * Supprime un lot de production ou mouvement de stock et recalcule automatiquement
+     * le stock du format concerné en inversant le delta du mouvement supprimé.
+     */
+    @Transaction
+    suspend fun supprimerMouvementStockTransaction(mouvementId: Long) {
+        val mv = getMouvementStockById(mouvementId) ?: return
+        val format = getFormatById(mv.formatId)
+        if (format != null) {
+            val stockCorrige = max(0, format.stockActuel - mv.quantiteDelta)
+            updateStockFormat(format.id, stockCorrige)
+        }
+        deleteMouvementStockById(mouvementId)
+    }
+
     // ─── 2. CLIENTS & SOLDES FINANCIERS EN DIRECT ────────────────────────────
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -90,6 +133,25 @@ interface ConserverieDao {
 
     @Update
     suspend fun updateClient(client: ClientEntity)
+
+    @Query("DELETE FROM clients WHERE id = :clientId")
+    suspend fun deleteClientById(clientId: Long)
+
+    @Query("SELECT id FROM ventes WHERE client_id = :clientId")
+    suspend fun getVenteIdsPourClient(clientId: Long): List<Long>
+
+    /**
+     * Supprime un client ainsi que toutes ses ventes et règlements, en restituant
+     * automatiquement au stock les quantités des ventes supprimées.
+     */
+    @Transaction
+    suspend fun supprimerClientCompletTransaction(clientId: Long) {
+        val venteIds = getVenteIdsPourClient(clientId)
+        for (vId in venteIds) {
+            supprimerVenteEtRestaurerStockTransaction(vId)
+        }
+        deleteClientById(clientId)
+    }
 
     @Query(
         """
@@ -170,6 +232,18 @@ interface ConserverieDao {
     @Query("SELECT * FROM ventes WHERE id = :venteId LIMIT 1")
     suspend fun getVenteById(venteId: Long): VenteEntity?
 
+    @Query("DELETE FROM ventes WHERE id = :venteId")
+    suspend fun deleteVenteById(venteId: Long)
+
+    @Query("SELECT * FROM lignes_vente WHERE vente_id = :venteId")
+    suspend fun getLignesBrutesPourVente(venteId: Long): List<LigneVente>
+
+    @Query("SELECT * FROM reglements WHERE id = :reglementId LIMIT 1")
+    suspend fun getReglementById(reglementId: Long): Reglement?
+
+    @Query("DELETE FROM reglements WHERE id = :reglementId")
+    suspend fun deleteReglementById(reglementId: Long)
+
     @Query("UPDATE ventes SET statut = :nouveauStatut WHERE id = :venteId")
     suspend fun updateStatutVente(venteId: Long, nouveauStatut: String)
 
@@ -177,9 +251,41 @@ interface ConserverieDao {
     suspend fun getTotalPayePourVente(venteId: Long): Double
 
     /**
-     * Requête paginée avec LIMIT & OFFSET, tri antéchronologique (ORDER BY date_vente DESC),
-     * filtre par statut et recherche par nom de client.
+     * Supprime une vente et restitue automatiquement les quantités vendues au stock
+     * de chaque format concerné.
      */
+    @Transaction
+    suspend fun supprimerVenteEtRestaurerStockTransaction(venteId: Long) {
+        val lignes = getLignesBrutesPourVente(venteId)
+        for (ligne in lignes) {
+            val format = getFormatById(ligne.formatId)
+            if (format != null) {
+                updateStockFormat(format.id, format.stockActuel + ligne.quantite)
+            }
+        }
+        deleteMouvementsStockParVenteId(venteId)
+        deleteVenteById(venteId) // Supprime aussi lignes_vente et reglements via ON DELETE CASCADE
+    }
+
+    /**
+     * Supprime un acompte / règlement et met à jour le statut de la vente correspondante.
+     */
+    @Transaction
+    suspend fun supprimerReglementTransaction(reglementId: Long) {
+        val reglement = getReglementById(reglementId) ?: return
+        deleteReglementById(reglementId)
+
+        val vente = getVenteById(reglement.venteId) ?: return
+        val totalPayeRestant = getTotalPayePourVente(vente.id).toDzdBigDecimal()
+        val tolerance = java.math.BigDecimal("0.01")
+        val nouveauStatut = when {
+            vente.montantTotal.subtract(totalPayeRestant) <= tolerance -> "PAYE"
+            totalPayeRestant > tolerance -> "PARTIEL"
+            else -> "IMPAYE"
+        }
+        updateStatutVente(vente.id, nouveauStatut)
+    }
+
     @Query(
         """
         SELECT v.id,
@@ -223,7 +329,14 @@ interface ConserverieDao {
         rechercheClient: String
     ): Flow<Int>
 
-    @Query("SELECT COALESCE(SUM(montant_total), 0.0) + COALESCE((SELECT SUM(montant) FROM reglements), 0.0) FROM ventes")
+    @Query(
+        """
+        SELECT COALESCE(SUM(montant_total), 0.0)
+               + COUNT(*) * 0.0001
+               + COALESCE((SELECT SUM(montant) + COUNT(*) * 0.0001 FROM reglements), 0.0)
+        FROM ventes
+        """
+    )
     fun observeVentesAndReglementsModificationPulse(): Flow<Double>
 
     @Query(
@@ -286,14 +399,6 @@ interface ConserverieDao {
     )
     fun observeReglementsPourClient(clientId: Long): Flow<List<ReglementEntity>>
 
-    /**
-     * Transaction ACID complète de création de vente :
-     * 1. Calcule le montant total avec prix_unitaire_fige.
-     * 2. Détermine le statut ('PAYE', 'PARTIEL', 'IMPAYE').
-     * 3. Insère la vente et ses lignes.
-     * 4. Décrémente immédiatement le stock de chaque format et consigne le mouvement.
-     * 5. Enregistre l'acompte initial éventuel.
-     */
     @Transaction
     suspend fun creerVenteCompleteTransaction(
         clientId: Long,
@@ -377,10 +482,6 @@ interface ConserverieDao {
         return venteId
     }
 
-    /**
-     * Transaction ACID d'ajout d'un règlement échelonné sur une vente :
-     * Insère le versement en BigDecimal et recalcule immédiatement le statut de la vente.
-     */
     @Transaction
     suspend fun enregistrerReglementTransaction(
         venteId: Long,
@@ -420,10 +521,6 @@ interface ConserverieDao {
         updateStatutVente(vente.id, nouveauStatut)
     }
 
-    /**
-     * Ventilateur d'encaissement global client : répartit un versement sur les ventes
-     * non soldées les plus anciennes du client (FIFO comptable).
-     */
     @Query(
         """
         SELECT * FROM ventes
@@ -461,7 +558,44 @@ interface ConserverieDao {
         }
     }
 
-    // ─── 4. REQUÊTES D'AGRÉGATION TEMPORELLE DU DASHBOARD FINANCIER ──────────
+    // ─── 4. PURGE GLOBALE DES DONNÉES DE TEST ────────────────────────────────
+
+    @Query("DELETE FROM reglements")
+    suspend fun clearAllReglements()
+
+    @Query("DELETE FROM lignes_vente")
+    suspend fun clearAllLignesVente()
+
+    @Query("DELETE FROM ventes")
+    suspend fun clearAllVentes()
+
+    @Query("DELETE FROM mouvements_stock")
+    suspend fun clearAllMouvementsStock()
+
+    @Query("DELETE FROM clients")
+    suspend fun clearAllClients()
+
+    @Query("DELETE FROM formats_produits")
+    suspend fun clearAllFormats()
+
+    @Query("UPDATE formats_produits SET stock_actuel = 0")
+    suspend fun resetAllFormatsStockToZero()
+
+    @Transaction
+    suspend fun viderToutesLesDonneesTransaction(conserverFormats: Boolean) {
+        clearAllReglements()
+        clearAllLignesVente()
+        clearAllVentes()
+        clearAllMouvementsStock()
+        clearAllClients()
+        if (conserverFormats) {
+            resetAllFormatsStockToZero()
+        } else {
+            clearAllFormats()
+        }
+    }
+
+    // ─── 5. REQUÊTES D'AGRÉGATION TEMPORELLE DU DASHBOARD FINANCIER ──────────
 
     @Query(
         """

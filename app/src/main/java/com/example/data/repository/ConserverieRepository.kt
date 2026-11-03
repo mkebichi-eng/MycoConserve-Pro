@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import com.example.data.BigDecimalConverters
 import com.example.data.local.ClientEntity
 import com.example.data.local.ClientWithBalanceRow
 import com.example.data.local.ConserverieDao
@@ -19,7 +20,7 @@ class ConserverieRepository(private val dao: ConserverieDao) {
     // ─── FORMATS & STOCK ─────────────────────────────────────────────────────
     val formatsActifs: Flow<List<FormatProduitEntity>> = dao.observeFormatsActifs()
     val valorisationStock: Flow<StockValorisationSummary> = dao.observeValorisationStock()
-    val recentMouvementsStock: Flow<List<MouvementStockWithFormatRow>> = dao.observeRecentMouvementsStock(60)
+    val recentMouvementsStock: Flow<List<MouvementStockWithFormatRow>> = dao.observeRecentMouvementsStock(80)
 
     suspend fun sauvegarderFormat(
         id: Long = 0,
@@ -34,7 +35,7 @@ class ConserverieRepository(private val dao: ConserverieDao) {
                 FormatProduitEntity(
                     nomFormat = nomFormat.trim(),
                     contenance = contenance.trim(),
-                    prixUnitaire = com.example.data.BigDecimalConverters.fromStringToBigDecimal(prixUnitaire.toString()),
+                    prixUnitaire = BigDecimalConverters.fromStringToBigDecimal(prixUnitaire.toString()),
                     stockActuel = stockInitial,
                     seuilAlerte = seuilAlerte,
                     actif = 1
@@ -44,8 +45,8 @@ class ConserverieRepository(private val dao: ConserverieDao) {
                 dao.enregistrerMouvementStockTransaction(
                     formatId = newId,
                     typeMouvement = "PRODUCTION",
-                    quantiteDelta = 0, // stockInitial already set on insert
-                    motif = "Stock initial à la création du format ($stockInitial u.)"
+                    quantiteDelta = 0,
+                    motif = "Stock initial à la création ($stockInitial u.)"
                 )
             }
             newId
@@ -55,12 +56,16 @@ class ConserverieRepository(private val dao: ConserverieDao) {
                 existing.copy(
                     nomFormat = nomFormat.trim(),
                     contenance = contenance.trim(),
-                    prixUnitaire = com.example.data.BigDecimalConverters.fromStringToBigDecimal(prixUnitaire.toString()),
+                    prixUnitaire = BigDecimalConverters.fromStringToBigDecimal(prixUnitaire.toString()),
                     seuilAlerte = seuilAlerte
                 )
             )
             id
         }
+    }
+
+    suspend fun supprimerFormat(formatId: Long) {
+        dao.supprimerFormatTransaction(formatId)
     }
 
     suspend fun ajouterLotProduction(formatId: Long, quantiteProduite: Int, motif: String) {
@@ -89,6 +94,10 @@ class ConserverieRepository(private val dao: ConserverieDao) {
                 if (estCasseOuPerte) "Perte / Casse déclarée" else "Ajustement d'inventaire"
             }
         )
+    }
+
+    suspend fun supprimerMouvementStock(mouvementId: Long) {
+        dao.supprimerMouvementStockTransaction(mouvementId)
     }
 
     // ─── CLIENTS ─────────────────────────────────────────────────────────────
@@ -133,6 +142,10 @@ class ConserverieRepository(private val dao: ConserverieDao) {
         }
     }
 
+    suspend fun supprimerClient(clientId: Long) {
+        dao.supprimerClientCompletTransaction(clientId)
+    }
+
     // ─── VENTES & RÈGLEMENTS ÉCHELONNÉS ──────────────────────────────────────
     val modificationPulse: Flow<Double> = dao.observeVentesAndReglementsModificationPulse()
 
@@ -170,6 +183,10 @@ class ConserverieRepository(private val dao: ConserverieDao) {
         )
     }
 
+    suspend fun supprimerVente(venteId: Long) {
+        dao.supprimerVenteEtRestaurerStockTransaction(venteId)
+    }
+
     suspend fun enregistrerAcompteSurVente(
         venteId: Long,
         montant: Double,
@@ -184,6 +201,10 @@ class ConserverieRepository(private val dao: ConserverieDao) {
         )
     }
 
+    suspend fun supprimerReglement(reglementId: Long) {
+        dao.supprimerReglementTransaction(reglementId)
+    }
+
     suspend fun enregistrerReglementGlobalClient(
         clientId: Long,
         montant: Double,
@@ -196,6 +217,11 @@ class ConserverieRepository(private val dao: ConserverieDao) {
             modePaiement = modePaiement,
             observation = observation
         )
+    }
+
+    // ─── PURGE GLOBALE ───────────────────────────────────────────────────────
+    suspend fun viderToutesLesDonnees(conserverFormats: Boolean) {
+        dao.viderToutesLesDonneesTransaction(conserverFormats)
     }
 
     // ─── DASHBOARD FINANCIER ─────────────────────────────────────────────────

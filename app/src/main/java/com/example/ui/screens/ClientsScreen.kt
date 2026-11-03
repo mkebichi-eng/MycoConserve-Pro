@@ -24,10 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
@@ -69,7 +69,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.ClientWithBalanceRow
+import com.example.data.local.ReglementEntity
 import com.example.data.local.VenteResumeRow
+import com.example.ui.components.CompactScreenHeader
+import com.example.ui.components.ConfirmDeleteDialog
 import com.example.ui.components.ReglementDialog
 import com.example.ui.components.StatutVenteBadge
 import com.example.ui.theme.JetBrainsMonoFontFamily
@@ -89,6 +92,9 @@ fun ClientsScreen(
     onToggleOnlyDebtors: (Boolean) -> Unit,
     onSelectClient: (Long?) -> Unit,
     onSaveClient: (id: Long, nom: String, telephone: String, adresse: String, notes: String) -> Unit,
+    onDeleteClient: (Long) -> Unit,
+    onDeleteClientSale: (Long) -> Unit,
+    onDeleteClientReglement: (Long) -> Unit,
     onRecordPaymentOnSale: (venteId: Long, montant: Double, modePaiement: String, observation: String) -> Unit,
     onRecordGlobalClientPayment: (clientId: Long, montant: Double, modePaiement: String, observation: String) -> Unit,
     modifier: Modifier = Modifier
@@ -96,6 +102,19 @@ fun ClientsScreen(
     val context = LocalContext.current
     var showEditClientDialog by remember { mutableStateOf(false) }
     var clientToEdit by remember { mutableStateOf<ClientWithBalanceRow?>(null) }
+    var clientToDelete by remember { mutableStateOf<ClientWithBalanceRow?>(null) }
+
+    clientToDelete?.let { target ->
+        ConfirmDeleteDialog(
+            titre = "Supprimer le client ?",
+            message = "Voulez-vous supprimer « ${target.nom} » ainsi que ses commandes (${target.nbVentes}) ? Les stocks des commandes supprimées seront automatiquement restitués.",
+            onDismiss = { clientToDelete = null },
+            onConfirm = {
+                onDeleteClient(target.id)
+                clientToDelete = null
+            }
+        )
+    }
 
     if (showEditClientDialog) {
         ClientFormDialog(
@@ -112,7 +131,6 @@ fun ClientsScreen(
         )
     }
 
-    // If a client is selected, display the full Client Detail Ledger Screen with BackHandler
     if (selectedClientDetail != null) {
         ClientDetailLedgerView(
             detailState = selectedClientDetail,
@@ -121,6 +139,9 @@ fun ClientsScreen(
                 clientToEdit = selectedClientDetail.client
                 showEditClientDialog = true
             },
+            onDeleteClient = { clientToDelete = selectedClientDetail.client },
+            onDeleteSale = onDeleteClientSale,
+            onDeleteReglement = onDeleteClientReglement,
             onRecordPaymentOnSale = onRecordPaymentOnSale,
             onRecordGlobalPayment = onRecordGlobalClientPayment
         )
@@ -134,117 +155,114 @@ fun ClientsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 14.dp)
     ) {
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "Répertoire Clients & Soldes",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    text = "Total à recouvrer : ${Formatters.formatDzd(totalCreancesClients)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (totalCreancesClients > 0.01) StatusUnpaidRed else StatusPaidGreen,
-                    fontWeight = FontWeight.SemiBold
-                )
+        // 1. En-tête ultra-compact sur 1 ligne avec petit bouton "+ Client"
+        CompactScreenHeader(
+            title = "Clients",
+            subtitleBadge = "Dû: ${Formatters.formatDzd(totalCreancesClients)}",
+            subtitleColor = if (totalCreancesClients > 0.01) StatusUnpaidRed else StatusPaidGreen,
+            addButtonLabel = "Client",
+            addButtonTestTag = "btn_nouveau_client",
+            onAddClick = {
+                clientToEdit = null
+                showEditClientDialog = true
             }
-            Button(
-                onClick = {
-                    clientToEdit = null
-                    showEditClientDialog = true
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.testTag("btn_nouveau_client")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PersonAdd,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Nouveau Client")
-            }
-        }
+        )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
+        // 2. Barre de recherche compacte
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Rechercher par nom, téléphone ou wilaya…") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            placeholder = { Text("Rechercher par nom, tél, wilaya…", style = MaterialTheme.typography.bodySmall) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
             trailingIcon = if (searchQuery.isNotEmpty()) {
                 {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Effacer")
+                    IconButton(
+                        onClick = { onSearchQueryChange("") },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Clear, contentDescription = "Effacer", modifier = Modifier.size(16.dp))
                     }
                 }
             } else null,
             singleLine = true,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
+            textStyle = MaterialTheme.typography.bodyMedium,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("search_clients_input")
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilterChip(
                 selected = !onlyDebtors,
                 onClick = { onToggleOnlyDebtors(false) },
-                label = { Text("Tous les clients (${clients.size})") }
+                label = { Text("Tous (${clients.size})", style = MaterialTheme.typography.labelMedium) }
             )
             FilterChip(
                 selected = onlyDebtors,
                 onClick = { onToggleOnlyDebtors(true) },
-                label = { Text("Clients débiteurs uniquement") },
+                label = { Text("Débiteurs uniquement", style = MaterialTheme.typography.labelMedium) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.WarningAmber,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 },
                 modifier = Modifier.testTag("chip_only_debtors")
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("clients_list"),
-            contentPadding = PaddingValues(bottom = 84.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(clients, key = { it.id }) { client ->
-                ClientDirectoryCard(
-                    client = client,
-                    onClick = { onSelectClient(client.id) },
-                    onCall = { Formatters.dialClient(context, client.telephone) },
-                    onShareStatement = {
-                        Formatters.shareClientStatement(
-                            context = context,
-                            clientNom = client.nom,
-                            telephone = client.telephone,
-                            totalCommande = client.totalCommande,
-                            totalPaye = client.totalPaye,
-                            soldeDebiteur = client.soldeDebiteur
-                        )
-                    }
+        if (clients.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Aucun client enregistré.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("clients_list"),
+                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(clients, key = { it.id }) { client ->
+                    ClientDirectoryCard(
+                        client = client,
+                        onClick = { onSelectClient(client.id) },
+                        onDelete = { clientToDelete = client },
+                        onCall = { Formatters.dialClient(context, client.telephone) },
+                        onShareStatement = {
+                            Formatters.shareClientStatement(
+                                context = context,
+                                clientNom = client.nom,
+                                telephone = client.telephone,
+                                totalCommande = client.totalCommande,
+                                totalPaye = client.totalPaye,
+                                soldeDebiteur = client.soldeDebiteur
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -254,6 +272,7 @@ fun ClientsScreen(
 private fun ClientDirectoryCard(
     client: ClientWithBalanceRow,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
     onCall: () -> Unit,
     onShareStatement: () -> Unit
 ) {
@@ -264,18 +283,18 @@ private fun ClientDirectoryCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("client_card_${client.id}"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(
             width = 1.dp,
-            color = if (hasDebt) StatusUnpaidRed.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+            color = if (hasDebt) StatusUnpaidRed.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -284,19 +303,19 @@ private fun ClientDirectoryCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = client.nom.take(2).uppercase(),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.Bold
                         )
@@ -304,57 +323,72 @@ private fun ClientDirectoryCard(
                     Column {
                         Text(
                             text = client.nom,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${client.telephone.ifBlank { "Sans tél." }} • ${client.nbVentes} commande(s)",
+                            text = "${client.telephone.ifBlank { "Sans tél." }} • ${client.nbVentes} cmd.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     FilledTonalIconButton(
                         onClick = onShareStatement,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,
                             contentDescription = "Envoyer relevé WhatsApp ou SMS",
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                     }
                     FilledTonalIconButton(
                         onClick = onCall,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Call,
                             contentDescription = "Appeler le client",
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_delete_client_${client.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Supprimer le client",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
 
-            // Live 3-Column Financial Balance
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
                         Text(
-                            text = "Total Commandé",
+                            text = "Commandé",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -362,12 +396,12 @@ private fun ClientDirectoryCard(
                             text = Formatters.formatDzd(client.totalCommande),
                             fontFamily = JetBrainsMonoFontFamily,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Total Payé",
+                            text = "Payé",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -375,13 +409,13 @@ private fun ClientDirectoryCard(
                             text = Formatters.formatDzd(client.totalPaye),
                             fontFamily = JetBrainsMonoFontFamily,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             color = StatusPaidGreen
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "Solde Débiteur",
+                            text = "Solde Dû",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -389,7 +423,7 @@ private fun ClientDirectoryCard(
                             text = Formatters.formatDzd(client.soldeDebiteur),
                             fontFamily = JetBrainsMonoFontFamily,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             color = if (hasDebt) StatusUnpaidRed else StatusPaidGreen
                         )
                     }
@@ -405,6 +439,9 @@ private fun ClientDetailLedgerView(
     detailState: ClientDetailSheetState,
     onBack: () -> Unit,
     onEditClient: () -> Unit,
+    onDeleteClient: () -> Unit,
+    onDeleteSale: (Long) -> Unit,
+    onDeleteReglement: (Long) -> Unit,
     onRecordPaymentOnSale: (venteId: Long, montant: Double, modePaiement: String, observation: String) -> Unit,
     onRecordGlobalPayment: (clientId: Long, montant: Double, modePaiement: String, observation: String) -> Unit
 ) {
@@ -413,6 +450,8 @@ private fun ClientDetailLedgerView(
     val client = detailState.client
     var selectedTab by remember { mutableIntStateOf(0) }
     var targetSaleForPayment by remember { mutableStateOf<VenteResumeRow?>(null) }
+    var saleToDelete by remember { mutableStateOf<VenteResumeRow?>(null) }
+    var reglementToDelete by remember { mutableStateOf<ReglementEntity?>(null) }
     var showGlobalPaymentDialog by remember { mutableStateOf(false) }
 
     targetSaleForPayment?.let { sale ->
@@ -424,6 +463,30 @@ private fun ClientDetailLedgerView(
             onConfirm = { montant, mode, obs ->
                 onRecordPaymentOnSale(sale.id, montant, mode, obs)
                 targetSaleForPayment = null
+            }
+        )
+    }
+
+    saleToDelete?.let { sale ->
+        ConfirmDeleteDialog(
+            titre = "Supprimer la facture #${sale.id} ?",
+            message = "Le montant (${Formatters.formatDzd(sale.montantTotal)}) sera retiré du solde client et les quantités seront restituées au stock.",
+            onDismiss = { saleToDelete = null },
+            onConfirm = {
+                onDeleteSale(sale.id)
+                saleToDelete = null
+            }
+        )
+    }
+
+    reglementToDelete?.let { reg ->
+        ConfirmDeleteDialog(
+            titre = "Supprimer ce règlement ?",
+            message = "Montant : ${Formatters.formatDzd(reg.montant)}\nLe solde du client et le statut de la facture #${reg.venteId} seront recalculés.",
+            onDismiss = { reglementToDelete = null },
+            onConfirm = {
+                onDeleteReglement(reg.id)
+                reglementToDelete = null
             }
         )
     }
@@ -448,12 +511,12 @@ private fun ClientDetailLedgerView(
                     Column {
                         Text(
                             text = client.nom,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Fiche Client & Échéancier des Règlements",
+                            text = "Fiche Client & Échéancier",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -463,7 +526,7 @@ private fun ClientDetailLedgerView(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Retour à la liste des clients"
+                            contentDescription = "Retour"
                         )
                     }
                 },
@@ -474,6 +537,13 @@ private fun ClientDetailLedgerView(
                             contentDescription = "Modifier la fiche client"
                         )
                     }
+                    IconButton(onClick = onDeleteClient) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Supprimer ce client",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             )
         }
@@ -482,20 +552,19 @@ private fun ClientDetailLedgerView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 14.dp)
         ) {
-            // Live Financial Balance Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (client.adresse.isNotBlank() || client.telephone.isNotBlank()) {
                         Row(
@@ -506,7 +575,7 @@ private fun ClientDetailLedgerView(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Text(
                                 text = listOfNotNull(
@@ -535,25 +604,27 @@ private fun ClientDetailLedgerView(
                             alignment = Alignment.CenterHorizontally
                         )
                         BalanceMetricColumn(
-                            label = "Solde Restant Dû",
+                            label = "Reste Dû",
                             value = Formatters.formatDzd(client.soldeDebiteur),
                             color = if (client.soldeDebiteur > 0.01) StatusUnpaidRed else StatusPaidGreen,
                             alignment = Alignment.End
                         )
                     }
 
-                    // Quick Action Buttons: Call, WhatsApp Statement, Global Payment
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
                             onClick = { Formatters.dialClient(context, client.telephone) },
-                            modifier = Modifier.weight(1f)
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp)
                         ) {
-                            Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Appeler", style = MaterialTheme.typography.labelMedium)
+                            Text("Appeler", style = MaterialTheme.typography.labelSmall)
                         }
                         FilledTonalButton(
                             onClick = {
@@ -566,45 +637,49 @@ private fun ClientDetailLedgerView(
                                     soldeDebiteur = client.soldeDebiteur
                                 )
                             },
-                            modifier = Modifier.weight(1.2f)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Relevé WA/SMS", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-
-                    if (client.soldeDebiteur > 0.01) {
-                        Button(
-                            onClick = { showGlobalPaymentDialog = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_reglement_global_client")
+                                .weight(1.2f)
+                                .height(32.dp)
                         ) {
-                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Enregistrer un Versement Client")
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Relevé WA/SMS", style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (client.soldeDebiteur > 0.01) {
+                            Button(
+                                onClick = { showGlobalPaymentDialog = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(32.dp)
+                                    .testTag("btn_reglement_global_client")
+                            ) {
+                                Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("+ Versement", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             TabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Commandes (${detailState.ventes.size})") }
+                    text = { Text("Commandes (${detailState.ventes.size})", style = MaterialTheme.typography.labelMedium) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Règlements (${detailState.reglements.size})") }
+                    text = { Text("Règlements (${detailState.reglements.size})", style = MaterialTheme.typography.labelMedium) }
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (selectedTab == 0) {
                 LazyColumn(
@@ -615,15 +690,15 @@ private fun ClientDetailLedgerView(
                     items(detailState.ventes, key = { it.id }) { vente ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -634,7 +709,23 @@ private fun ClientDetailLedgerView(
                                         text = "Facture #${vente.id} • ${Formatters.formatDateShort(vente.dateVente)}",
                                         style = MaterialTheme.typography.titleSmall
                                     )
-                                    StatutVenteBadge(statut = vente.statut)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        StatutVenteBadge(statut = vente.statut)
+                                        IconButton(
+                                            onClick = { saleToDelete = vente },
+                                            modifier = Modifier.size(26.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = "Supprimer la facture",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -643,24 +734,27 @@ private fun ClientDetailLedgerView(
                                     Text(
                                         text = "Total : ${Formatters.formatDzd(vente.montantTotal)}",
                                         fontFamily = JetBrainsMonoFontFamily,
-                                        fontSize = 13.sp
+                                        fontSize = 12.sp
                                     )
                                     Text(
                                         text = "Reste : ${Formatters.formatDzd(vente.resteAPayer)}",
                                         fontFamily = JetBrainsMonoFontFamily,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.sp,
                                         color = if (vente.resteAPayer > 0.01) StatusUnpaidRed else StatusPaidGreen
                                     )
                                 }
                                 if (vente.resteAPayer > 0.01) {
                                     OutlinedButton(
                                         onClick = { targetSaleForPayment = vente },
-                                        modifier = Modifier.fillMaxWidth()
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(30.dp)
                                     ) {
-                                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Ajouter un acompte sur cette facture")
+                                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("+ Acompte sur cette facture", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
@@ -677,14 +771,14 @@ private fun ClientDetailLedgerView(
                         val modeLabel = ModePaiement.fromCode(reg.modePaiement).label
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
+                                    .padding(10.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -700,13 +794,29 @@ private fun ClientDetailLedgerView(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Text(
-                                    text = "+ ${Formatters.formatDzd(reg.montant)}",
-                                    fontFamily = JetBrainsMonoFontFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = StatusPaidGreen
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "+${Formatters.formatDzd(reg.montant)}",
+                                        fontFamily = JetBrainsMonoFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = StatusPaidGreen
+                                    )
+                                    IconButton(
+                                        onClick = { reglementToDelete = reg },
+                                        modifier = Modifier.size(26.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = "Supprimer cet acompte",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -733,7 +843,7 @@ private fun BalanceMetricColumn(
             text = value,
             fontFamily = JetBrainsMonoFontFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             color = color
         )
     }

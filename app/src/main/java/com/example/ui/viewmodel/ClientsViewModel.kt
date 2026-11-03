@@ -138,4 +138,25 @@ class ClientsViewModel(
             )
         }
     }
+
+    fun supprimerClient(clientId: Long) {
+        viewModelScope.launch {
+            if (selectedClientId.value == clientId) {
+                selectedClientId.value = null
+            }
+            repository.supprimerClient(clientId)
+        }
+    }
+
+    fun supprimerFactureClient(venteId: Long) {
+        viewModelScope.launch {
+            repository.supprimerVente(venteId)
+        }
+    }
+
+    fun supprimerReglementClient(reglementId: Long) {
+        viewModelScope.launch {
+            repository.supprimerReglement(reglementId)
+        }
+    }
 }

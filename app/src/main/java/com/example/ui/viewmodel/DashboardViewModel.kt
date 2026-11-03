@@ -157,6 +157,12 @@ class DashboardViewModel(
         }
     }
 
+    fun viderToutesLesDonnees(conserverFormats: Boolean) {
+        viewModelScope.launch {
+            repository.viderToutesLesDonnees(conserverFormats)
+        }
+    }
+
     private data class KpiBundle(
         val ca: Double,
         val encaisse: Double,

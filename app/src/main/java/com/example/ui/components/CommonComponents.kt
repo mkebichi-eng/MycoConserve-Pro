@@ -1,13 +1,13 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,19 +19,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,14 +52,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.JetBrainsMonoFontFamily
@@ -68,10 +71,108 @@ import com.example.util.Formatters
 import com.example.util.ModePaiement
 import kotlin.math.roundToLong
 
+/**
+ * En-tête ultra-compact sur 1 seule ligne pour maximiser l'espace des listes.
+ * Intègre un petit bouton '+' discret (32.dp) et une option de purge optionnelle.
+ */
+@Composable
+fun CompactScreenHeader(
+    title: String,
+    subtitleBadge: String,
+    subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    addButtonLabel: String,
+    addButtonTestTag: String,
+    onAddClick: () -> Unit,
+    onPurgeAllClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(50)
+            ) {
+                Text(
+                    text = subtitleBadge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = subtitleColor,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (onPurgeAllClick != null) {
+                IconButton(
+                    onClick = onPurgeAllClick,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("btn_purge_global")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = "Vider les données de test",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            FilledTonalButton(
+                onClick = onAddClick,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag(addButtonTestTag)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = addButtonLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun CanneryHeaderBanner(
     title: String,
     subtitle: String,
+    onOpenPurgeDialog: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val gradient = Brush.linearGradient(
@@ -84,92 +185,157 @@ fun CanneryHeaderBanner(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         color = Color.Transparent
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .background(gradient)
-                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Subtle decorative preserve jars & mushroom caps on the right
-            Canvas(
-                modifier = Modifier
-                    .size(96.dp, 68.dp)
-                    .align(Alignment.CenterEnd)
-            ) {
-                // Jar 1 silhouette
-                drawRoundRect(
-                    color = Color(0x26FAF3E8),
-                    topLeft = Offset(size.width * 0.12f, size.height * 0.22f),
-                    size = Size(size.width * 0.34f, size.height * 0.72f),
-                    cornerRadius = CornerRadius(14f, 14f)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFFFFFCF7)
                 )
-                drawRoundRect(
-                    color = Color(0x55E09F3E),
-                    topLeft = Offset(size.width * 0.16f, size.height * 0.10f),
-                    size = Size(size.width * 0.26f, size.height * 0.12f),
-                    cornerRadius = CornerRadius(6f, 6f)
-                )
-                // Jar 2 silhouette
-                drawRoundRect(
-                    color = Color(0x33FAF3E8),
-                    topLeft = Offset(size.width * 0.54f, size.height * 0.14f),
-                    size = Size(size.width * 0.40f, size.height * 0.80f),
-                    cornerRadius = CornerRadius(16f, 16f)
-                )
-                drawRoundRect(
-                    color = Color(0x77E09F3E),
-                    topLeft = Offset(size.width * 0.59f, size.height * 0.02f),
-                    size = Size(size.width * 0.30f, size.height * 0.12f),
-                    cornerRadius = CornerRadius(6f, 6f)
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFEAD8C3),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Column(modifier = Modifier.fillMaxWidth(0.84f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+            if (onOpenPurgeDialog != null) {
+                Surface(
+                    onClick = onOpenPurgeDialog,
+                    color = Color(0x33FAF3E8),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("banner_purge_button")
                 ) {
-                    Surface(
-                        color = Color(0x33FAF3E8),
-                        shape = RoundedCornerShape(50)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = Color(0xFFFADCC0),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = "100% HORS-LIGNE • SQLITE ACID",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFFADCC0),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "Vider les données",
+                            tint = Color(0xFFFFE3C2),
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "Vider test",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFFFCF7),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color(0xFFFFFCF7)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFEAD8C3)
-                )
             }
         }
     }
+}
+
+@Composable
+fun ConfirmDeleteDialog(
+    titre: String,
+    message: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.DeleteForever,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text(text = titre, style = MaterialTheme.typography.titleLarge)
+        },
+        text = {
+            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                ),
+                modifier = Modifier.testTag("btn_confirm_delete")
+            ) {
+                Text("Supprimer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
+fun PurgeAllDataDialog(
+    onDismiss: () -> Unit,
+    onPurgeEverything: () -> Unit,
+    onPurgeHistoryKeepFormats: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.DeleteSweep,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text("Nettoyer les données de test", style = MaterialTheme.typography.titleLarge)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Choisissez le niveau de réinitialisation souhaité (les données de démonstration ne seront plus jamais recréées au démarrage) :",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedButton(
+                    onClick = onPurgeHistoryKeepFormats,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("btn_purge_keep_formats")
+                ) {
+                    Text("Vider Ventes, Clients & Lots (Garder Formats)")
+                }
+                Button(
+                    onClick = onPurgeEverything,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("btn_purge_everything")
+                ) {
+                    Text("Tout vider à 100% (Base vierge)")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
 }
 
 @Composable
@@ -190,7 +356,7 @@ fun StatutVenteBadge(
         border = BorderStroke(1.dp, textColor.copy(alpha = 0.25f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -198,7 +364,7 @@ fun StatutVenteBadge(
                 imageVector = icon,
                 contentDescription = label,
                 tint = textColor,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(12.dp)
             )
             Text(
                 text = label,
@@ -244,7 +410,7 @@ fun ReglementDialog(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(34.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
@@ -252,13 +418,14 @@ fun ReglementDialog(
                     Icon(
                         imageVector = Icons.Default.Payments,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Column {
                     Text(
                         text = titre,
-                        style = MaterialTheme.typography.titleLarge
+                        style = MaterialTheme.typography.titleMedium
                     )
                     Text(
                         text = sousTitreClient,
@@ -269,16 +436,16 @@ fun ReglementDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -290,13 +457,12 @@ fun ReglementDialog(
                             text = Formatters.formatDzd(resteAPayerMax),
                             fontFamily = JetBrainsMonoFontFamily,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
 
-                // Quick percentage buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -306,7 +472,8 @@ fun ReglementDialog(
                             montantText = (resteAPayerMax * 0.5).roundToLong().toString()
                             errorMsg = null
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp)
                     ) {
                         Text("50%", style = MaterialTheme.typography.labelMedium)
                     }
@@ -315,7 +482,8 @@ fun ReglementDialog(
                             montantText = resteAPayerMax.roundToLong().toString()
                             errorMsg = null
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp)
                     ) {
                         Text("Tout solder (100%)", style = MaterialTheme.typography.labelMedium)
                     }
@@ -342,14 +510,14 @@ fun ReglementDialog(
                     style = MaterialTheme.typography.labelLarge
                 )
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     ModePaiement.entries.forEach { mode ->
                         FilterChip(
                             selected = selectedMode == mode,
                             onClick = { selectedMode = mode },
-                            label = { Text(mode.label) },
+                            label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -387,7 +555,7 @@ fun ReglementDialog(
                 },
                 modifier = Modifier.testTag("confirm_reglement_button")
             ) {
-                Text("Valider l'encaissement")
+                Text("Valider")
             }
         },
         dismissButton = {

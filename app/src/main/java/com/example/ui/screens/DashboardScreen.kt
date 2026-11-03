@@ -88,11 +88,29 @@ fun DashboardScreen(
     onSetCustomDateRange: (Long, Long) -> Unit,
     onQuickCollectDebtor: (clientId: Long, montant: Double, modePaiement: String, observation: String) -> Unit,
     onNavigateToClient: (Long) -> Unit,
+    onPurgeAllData: (conserverFormats: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showDateRangeDialog by remember { mutableStateOf(false) }
+    var showPurgeDialog by remember { mutableStateOf(false) }
     var debtorForPayment by remember { mutableStateOf<ClientWithBalanceRow?>(null) }
+
+    if (showPurgeDialog) {
+        com.example.ui.components.PurgeAllDataDialog(
+            onDismiss = { showPurgeDialog = false },
+            onPurgeEverything = {
+                com.example.data.AppDatabase.markSeedDismissed(context)
+                onPurgeAllData(false)
+                showPurgeDialog = false
+            },
+            onPurgeHistoryKeepFormats = {
+                com.example.data.AppDatabase.markSeedDismissed(context)
+                onPurgeAllData(true)
+                showPurgeDialog = false
+            }
+        )
+    }
 
     if (showDateRangeDialog) {
         CustomDateRangeDialog(
@@ -123,14 +141,15 @@ fun DashboardScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("dashboard_list"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Header Banner
+        // 1. Compact Header Banner with "Vider test" action
         item {
             CanneryHeaderBanner(
                 title = "MycoConserve Pro",
-                subtitle = "Pilotage financier, stock de conserves & créances clients"
+                subtitle = "Pilotage financier, stock & créances (DZD)",
+                onOpenPurgeDialog = { showPurgeDialog = true }
             )
         }
 

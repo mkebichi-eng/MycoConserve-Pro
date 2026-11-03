@@ -36,10 +36,14 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private const val PREFS_NAME = "mycoconserve_db_prefs"
+        private const val KEY_SEED_DONE = "initial_seed_done"
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                val appCtx = context.applicationContext
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    appCtx,
                     AppDatabase::class.java,
                     "mycoconserve_artisan.db"
                 )
@@ -47,10 +51,22 @@ abstract class AppDatabase : RoomDatabase() {
                     .build()
                 INSTANCE = instance
                 CoroutineScope(Dispatchers.IO).launch {
-                    seedDatabaseIfEmpty(instance.conserverieDao())
+                    val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    if (!prefs.getBoolean(KEY_SEED_DONE, false)) {
+                        seedDatabaseIfEmpty(instance.conserverieDao())
+                        prefs.edit().putBoolean(KEY_SEED_DONE, true).apply()
+                    }
                 }
                 instance
             }
+        }
+
+        fun markSeedDismissed(context: Context) {
+            context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_SEED_DONE, true)
+                .apply()
         }
 
         suspend fun seedDatabaseIfEmpty(dao: ConserverieDao) {
