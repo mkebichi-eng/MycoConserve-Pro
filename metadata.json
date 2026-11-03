@@ -1,0 +1,6 @@
+{
+  "name": "MycoConserve Pro",
+  "description": "Gestion commerciale, suivi de stock et analyse financière hors-ligne pour conserverie artisanale de champignons.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

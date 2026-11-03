@@ -1,0 +1,6 @@
+{
+  "summary": "Plan d'implémentation technique complet pour MycoConserve Pro : application Android 100% locale et hors-ligne (Kotlin, Jetpack Compose, SQLite Room) dédiée à la gestion commerciale, au suivi de stock (lots de production et casse), aux règlements échelonnés en Dinar Algérien (DZD) et à l'analyse financière d'une conserverie artisanale de champignons.",
+  "updatedAt": "2026-11-02T13:27:47.485626488Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

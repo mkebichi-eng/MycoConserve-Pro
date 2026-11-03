@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">MycoConserve Pro</string>
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_ventes">Ventes</string>
+    <string name="tab_clients">Clients</string>
+    <string name="tab_stock">Stock</string>
+    <string name="currency_dzd">DA</string>
+    <string name="new_sale_cta">Nouvelle Vente</string>
+    <string name="new_client_cta">Nouveau Client</string>
+    <string name="new_format_cta">Nouveau Format</string>
+    <string name="search_client_hint">Rechercher un client par nom…</string>
+    <string name="call_client_desc">Appeler le client</string>
+    <string name="whatsapp_reminder_desc">Envoyer le relevé par WhatsApp ou SMS</string>
+    <string name="add_payment_cta">Enregistrer un acompte</string>
+    <string name="production_batch_cta">Lot de production</string>
+    <string name="stock_adjustment_cta">Ajustement / Casse</string>
+</resources>
